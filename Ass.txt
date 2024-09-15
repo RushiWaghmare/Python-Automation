@@ -1,0 +1,121 @@
+import sys 
+from sys import argv, exit
+import hashlib
+import os
+import time
+import sched
+from datetime import datetime
+from pathlib import Path
+import smtplib
+from email.message import EmailMessage
+
+def hashfile(path, blocksize=1024):
+    afile = open(path, 'rb')
+    hasher = hashlib.md5()
+    buf = afile.read(blocksize)
+    while len(buf) > 0:
+        hasher.update(buf)
+        buf = afile.read(blocksize)
+    afile.close()
+    return hasher.hexdigest()
+
+def delete_duplicate_files(directory, log_file_name):
+    files_seen = {}
+    total_files_scanned = 0
+    duplicate_files_found = 0
+
+    if not os.path.isdir(directory):
+        print("No Such Directory Present in System")
+        return total_files_scanned, duplicate_files_found
+
+    with open(log_file_name, 'a') as log:
+        for dirName, subdirName, Filelist in os.walk(directory):
+            for file in Filelist:
+                File_path = os.path.join(dirName, file)
+                File_hash = hashfile(File_path)
+                total_files_scanned += 1
+
+                if File_hash in files_seen:
+                    os.remove(File_path)
+                    log.write(f"Deleted duplicate file: {File_path}\n")
+                    duplicate_files_found += 1
+                else:
+                    files_seen[File_hash] = File_path
+
+    return total_files_scanned, duplicate_files_found
+
+def send_log(email, log_file_name, start_time, total_files_scanned, duplicate_files_found):
+    end_time = datetime.now()
+    mail_content = f"""
+    Duplicate File Removal Report:
+    
+    Start Time: {start_time}
+    End Time: {end_time}
+    Total Files Scanned: {total_files_scanned}
+    Total Duplicate Files Found: {duplicate_files_found}
+    """
+    
+    with open(log_file_name, 'r') as file:
+        attachment_content = file.read()
+
+    msg = EmailMessage()
+    msg.set_content(mail_content)
+    msg['Subject'] = 'Duplicate File Removal Report'
+    msg['From'] = "your_email@example.com"  # Replace with your email
+    msg['To'] = email
+
+    msg.add_attachment(attachment_content, maintype='text', subtype='plain', filename=log_file_name)
+
+    with smtplib.SMTP('smtp.example.com') as server:  # Replace with your SMTP server
+        server.login("your_email@example.com", "password")  # Replace with your login credentials
+        server.send_message(msg)
+
+def main():
+    print("Application name: " + argv[0])
+
+    if len(sys.argv) == 2:
+        if sys.argv[1] == "--h" or sys.argv[1] == "--H":
+            print("This program is Directory Watcher")
+            exit()
+        if sys.argv[1] == "--u" or sys.argv[1] == "--U":
+            print("usage : Print Filenames from input Directory Name")
+            print("Please provide Directory name")
+            exit()
+        else:
+            try:
+                starttime = time.time()
+                res = DisplayCheaksum(sys.argv[1])
+                endtime = time.time()
+                print("Time required for execution of Program is : ", endtime - starttime)
+            except ValueError as obj1:
+                print("Invalid Arguments, Please enter Valid Directory Name")
+            except Exception as obj2:
+                print("Invalid to perform due to ", obj2)
+
+    elif len(sys.argv) == 4:
+        directory = sys.argv[1]
+        interval = int(sys.argv[2])
+        email = sys.argv[3]
+
+        scheduler = sched.scheduler(time.time, time.sleep)
+        
+        def scheduled_task():
+            start_time = datetime.now()
+            log_file_name = f"Marvellous/log_{start_time.strftime('%Y%m%d_%H%M%S')}.txt"
+            Path("Marvellous").mkdir(exist_ok=True)
+            
+            total_files_scanned, duplicate_files_found = delete_duplicate_files(directory, log_file_name)
+            send_log(email, log_file_name, start_time, total_files_scanned, duplicate_files_found)
+            
+            scheduler.enter(interval * 60, 1, scheduled_task)
+
+        scheduler.enter(0, 1, scheduled_task)
+        scheduler.run()
+
+    else:
+        print("Invalid Arguments")
+        print("Enter --h or --H for information about program")
+        print("Enter --u or --U for Usage of program")
+
+if __name__ == "__main__":
+    main()
